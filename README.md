@@ -1,12 +1,14 @@
 # EventBridge Datacenter Monitoring Telemetry
 
+[![Architecture](https://raw.githubusercontent.com/BoldFellow/eventbridge-datacenter-monitoring/main/architecture.png)](https://github.com/BoldFellow/eventbridge-datacenter-monitoring)
+
 A datacenter monitoring telemetry pipeline built on Amazon EventBridge. Sensors publish temperature, motion, and energy events to a custom event bus. Four EventBridge rules with progressively richer JSON patterns route each event to different downstream consumers — demonstrating the pattern-matching capabilities that make EventBridge the right choice over SNS for complex event routing.
 
 ## What you will build
 
 ```
 EventBridge Scheduler
-  ├── every 2 min  →  simulator Lambda  →  dc-dc-telemetry-bus (custom event bus)
+  ├── every 2 min  →  simulator Lambda  →  dc-telemetry-bus (custom event bus)
   └── daily 09:00  →  daily-summary Lambda
 
 dc-telemetry-bus rules:
