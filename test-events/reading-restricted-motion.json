@@ -1,0 +1,8 @@
+[
+  {
+    "Source": "sensors.datacenter",
+    "DetailType": "MotionDetected",
+    "EventBusName": "dc-telemetry-bus",
+    "Detail": "{\"sensorId\":\"M-004\",\"building\":\"HQ\",\"zone\":\"restricted-ceo-office\",\"confidence\":94}"
+  }
+]

@@ -1,0 +1,8 @@
+[
+  {
+    "Source": "sensors.datacenter",
+    "DetailType": "TemperatureReading",
+    "EventBusName": "dc-telemetry-bus",
+    "Detail": "{\"sensorId\":\"T-001\",\"building\":\"HQ\",\"zone\":\"office-1\",\"temperature\":22,\"unit\":\"C\"}"
+  }
+]

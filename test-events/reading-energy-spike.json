@@ -1,0 +1,8 @@
+[
+  {
+    "Source": "sensors.datacenter",
+    "DetailType": "EnergyUsage",
+    "EventBusName": "dc-telemetry-bus",
+    "Detail": "{\"sensorId\":\"E-005\",\"building\":\"HQ\",\"zone\":\"cafeteria\",\"kwh\":67.3,\"period\":\"15min\"}"
+  }
+]
