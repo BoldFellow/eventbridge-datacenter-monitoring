@@ -710,7 +710,23 @@ Lambda → `dc-anomaly-handler` → **Configuration** → **Resource-based polic
 Scheduler needs an IAM role to invoke your Lambda functions. Unlike EventBridge Rules (which use resource-based policies), Scheduler uses an IAM execution role.
 
 1. **IAM** → **Roles** → **Create role**.
-2. **Trusted entity:** AWS service → search for and select **EventBridge Scheduler** → **Next**.
+2. **Trusted entity type:** **Custom trust policy** — paste the policy below, then **Next**.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "scheduler.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
 3. **Permissions:** do not attach any managed policy — click **Next**.
 4. **Role name:** `dc-scheduler-role` → **Create role**.
 5. Open the new role → **Add permissions** → **Create inline policy** → switch to **JSON** editor:
