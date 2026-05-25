@@ -965,11 +965,17 @@ Open the `eventbridge-datacenter-monitoring` dashboard. Within 5 minutes of your
 
 ### Step 5: Manually invoke the daily summary
 
+> **Why the first run shows zeros — and how to test with real data**
+>
+> The function always reports on *yesterday's* date (`datetime.now(UTC) - 1 day`). Every record in `dc-readings` has a `timestamp` equal to the EventBridge event time — which is today. So on the day you deploy, the scan finds nothing and all counts are 0. This is correct behaviour, not a bug. The scheduled 09:00 UTC run tomorrow morning will pick up today's records and show real counts.
+>
+> To see non-zero output **today**: go to **Lambda** → `dc-daily-summary` → **Code** → change `timedelta(days=1)` to `timedelta(days=0)` → **Deploy**. Run the test below, then change it back.
+
 1. **Lambda** → `dc-daily-summary` → **Test** tab.
 2. **Event name:** `manual-test`, leave the default payload `{}`.
 3. **Test**.
 4. The function returns `{"date": "...", "events": ..., "anomalies": ...}`.
-5. The function publishes a **Datacenter Daily Summary** email to `datacenter-alerts` SNS. Check your inbox — the email contains total readings, anomaly count, active zones, and an energy anomaly list. If all tests were done today (not yesterday), the counts will be 0 — the function scans for yesterday's date. That is expected behavior, not a bug.
+5. The function publishes a **Datacenter Daily Summary** email to `datacenter-alerts` SNS. Check your inbox — the email contains total readings, anomaly count, active zones, and an energy anomaly list.
 
 ---
 
