@@ -11,7 +11,7 @@ The teaching focus is **EventBridge event pattern matching**: exact values, nume
 1. [Prerequisites and cost](#1-prerequisites-and-cost)
 2. [Architecture overview](#2-architecture-overview)
 3. [Create the DynamoDB tables](#3-create-the-dynamodb-tables)
-4. [Create the SNS topic](#4-create-the-sns-topic)
+4. [Create the SNS topics](#4-create-the-sns-topics)
 5. [Create the SQS queue](#5-create-the-sqs-queue)
 6. [Create the EventBridge custom bus](#6-create-the-eventbridge-custom-bus)
 7. [Create IAM roles for each Lambda](#7-create-iam-roles-for-each-lambda)
@@ -31,12 +31,12 @@ The teaching focus is **EventBridge event pattern matching**: exact values, nume
 
 **What you need:**
 - An AWS account with permissions to create: Lambda, DynamoDB, SNS, SQS, EventBridge, IAM roles, EventBridge Scheduler, CloudWatch Alarms, and CloudWatch Dashboards.
-- An email address you can access during the lab — you will confirm an SNS subscription to receive alerts.
+- Three email addresses you can access during the lab (or one mailbox used three times for testing) — you will confirm an SNS subscription for each to receive alerts.
 - AWS CLI installed and configured (used for the test step; console-only steps are also shown).
 
 **What you will deploy (and what it costs):**
 - 2 DynamoDB tables (on-demand pricing — free tier covers 25 GB and 200 million requests/month)
-- 1 SNS topic with 1 email subscription (first 1,000 emails/month free)
+- 3 SNS topics with 1 email subscription each (first 1,000 emails/month free)
 - 1 SQS queue (first 1 million requests/month free)
 - 1 EventBridge custom bus + 4 rules (custom bus events: $1/million; free tier covers 1 million/month)
 - 4 Lambda functions (first 1 million invocations/month free)
@@ -68,24 +68,31 @@ The teaching focus is **EventBridge event pattern matching**: exact values, nume
    ┌────────────────────────────────────────┐
    │   Custom event bus: dc-telemetry-bus   │
    └────────────────────────────────────────┘
-        │              │              │             │
-   Rule 1         Rule 2         Rule 3        Rule 4
-   all events     temp > 80C     motion in     energy
-   (catch-all)    (numeric)      restricted-*  spike > 50 kWh
-        │              │         zones (prefix) │
-        ▼              ▼              │          ▼
-   recorder       SNS topic          ▼       anomaly-handler
-   Lambda         datacenter-alerts SQS       Lambda
-        │              │          dc-security- │
-        ▼              ▼          review-queue ▼
-   DynamoDB       email/SMS           │      DynamoDB
-   dc-readings                        ▼      dc-anomalies
-                               CloudWatch
-                               Alarm → SNS
-                               (queue depth ≥ 1)
+        │              │           │              │
+   Rule 1         Rule 2       Rule 3         Rule 4
+   all events     temp > 80C   motion in      energy
+   (catch-all)    (numeric)    restricted-*   spike > 50 kWh
+        │              │       zones (prefix)      │
+        ▼              ▼          ├──────┐          ▼
+   recorder       SNS            ▼      ▼      anomaly-handler
+   Lambda         dc-infra-    SNS        SQS      Lambda
+        │          team        dc-sec-    dc-sec-      │
+        ▼          (email:     team       review-      ▼
+   DynamoDB       temp alerts) (email:    queue    DynamoDB
+   dc-readings                 sec team)     │    dc-anomalies
+                                             ▼
+                                        CloudWatch
+                                        Alarm (≥5)
+                                             │ escalation
+                                             ▼
+                              SNS dc-management ◄── daily-summary Lambda
+                                   (manager)         (09:00 UTC digest)
 ```
 
-The **daily-summary Lambda** also publishes to `datacenter-alerts` SNS — at 09:00 UTC each day it emails a digest (total readings, anomaly count, active zones) covering the previous day's activity.
+Each audience receives only what is relevant to them:
+- **Infra team** (`dc-infra-team`): temperature alerts from EventBridge Rule 2.
+- **Security team** (`dc-sec-team`): immediate per-event alerts from EventBridge Rule 3 (within seconds of detection).
+- **Manager** (`dc-management`): daily digest at 09:00 UTC, plus CloudWatch escalation if 5 or more security events accumulate unprocessed.
 
 All metrics are visible in the **CloudWatch dashboard** — rule invocations, Lambda counts, DynamoDB writes, queue depth, and alarm state on one screen.
 
@@ -129,27 +136,36 @@ Wait for both tables to reach **Active** status (usually 15–30 seconds).
 
 ---
 
-## 4. Create the SNS topic
+## 4. Create the SNS topics
 
-### Create the topic
+You need three topics — one per audience. All are Standard type (FIFO is not supported as an EventBridge or CloudWatch Alarm target).
+
+### Topic 1: dc-infra-team (infra team — temperature alerts)
 
 1. Open the **SNS** console → **Topics** → **Create topic**.
-2. **Type:** Standard (not FIFO — EventBridge targets require Standard).
-3. **Name:** `datacenter-alerts`
+2. **Type:** Standard.
+3. **Name:** `dc-infra-team`
 4. Leave all other settings as default → **Create topic**.
+5. Note the **Topic ARN** — it looks like `arn:aws:sns:us-east-1:123456789012:dc-infra-team`.
+6. On the topic page → **Subscriptions** tab → **Create subscription**.
+7. **Protocol:** Email, **Endpoint:** infra team email address → **Create subscription**.
+8. Check that inbox and click **Confirm subscription** in the AWS confirmation email.
 
-Note the **Topic ARN** — you will paste it into the Lambda environment variable later. It looks like:
-`arn:aws:sns:us-east-1:123456789012:datacenter-alerts`
+### Topic 2: dc-sec-team (security team — queue-depth alarm)
 
-### Create an email subscription
+1. **Create topic** → **Standard** → **Name:** `dc-sec-team` → **Create topic**.
+2. Note the **Topic ARN**.
+3. **Subscriptions** → **Create subscription** → **Protocol:** Email, **Endpoint:** security team email address → **Create subscription**.
+4. Confirm the subscription from that inbox.
 
-1. On the `datacenter-alerts` topic page → **Subscriptions** tab → **Create subscription**.
-2. **Protocol:** Email
-3. **Endpoint:** your email address
-4. **Create subscription**.
-5. Check your inbox. AWS sends a confirmation email with subject **"AWS Notification - Subscription Confirmation"**. Click **Confirm subscription** in that email.
+### Topic 3: dc-management (manager — daily digest)
 
-> The subscription must be confirmed before EventBridge can deliver messages to it. If you skip this step, the rule will fire but emails will not arrive.
+1. **Create topic** → **Standard** → **Name:** `dc-management` → **Create topic**.
+2. Note the **Topic ARN** — you will paste it into the `dc-daily-summary` Lambda environment variable later.
+3. **Subscriptions** → **Create subscription** → **Protocol:** Email, **Endpoint:** manager email address → **Create subscription**.
+4. Confirm the subscription from that inbox.
+
+> All three subscriptions must be confirmed before the respective publishers can deliver messages. If you skip a confirmation, the publisher will fire but emails will not arrive.
 
 ---
 
@@ -265,7 +281,7 @@ Each Lambda function gets its own minimal IAM role — no shared roles, no wildc
     {
       "Effect": "Allow",
       "Action": "sns:Publish",
-      "Resource": "arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:datacenter-alerts"
+      "Resource": "arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:dc-management"
     }
   ]
 }
@@ -507,7 +523,7 @@ def lambda_handler(event, context):
 4. Add three environment variables:
    - `READINGS_TABLE` = `dc-readings`
    - `ANOMALIES_TABLE` = `dc-anomalies`
-   - `SNS_TOPIC_ARN` = your SNS topic ARN from step 4
+   - `SNS_TOPIC_ARN` = the `dc-management` topic ARN from step 4
 
 ---
 
@@ -568,7 +584,7 @@ After saving the rule, go to **Lambda** → `dc-recorder` → **Configuration** 
 }
 ```
 
-6. **Target:** SNS topic → `datacenter-alerts`.
+6. **Target:** SNS topic → `dc-infra-team`.
 7. Expand **Additional settings** → **Configure input** → select **Input transformer**.
 
 **Input paths map:**
@@ -593,7 +609,7 @@ After saving the rule, go to **Lambda** → `dc-recorder` → **Configuration** 
 
 **Grant EventBridge permission to publish to SNS** (resource-based on the SNS topic):
 
-1. Open **SNS** → `datacenter-alerts` → **Access policy** tab → **Edit**.
+1. Open **SNS** → `dc-infra-team` → **Access policy** tab → **Edit**.
 2. Add this statement inside the `"Statement"` array (alongside any existing statements):
 
 ```json
@@ -604,7 +620,7 @@ After saving the rule, go to **Lambda** → `dc-recorder` → **Configuration** 
     "Service": "events.amazonaws.com"
   },
   "Action": "sns:Publish",
-  "Resource": "arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:datacenter-alerts",
+  "Resource": "arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:dc-infra-team",
   "Condition": {
     "ArnLike": {
       "aws:SourceArn": "arn:aws:events:us-east-1:YOUR_ACCOUNT_ID:rule/dc-telemetry-bus/dc-high-temperature"
@@ -615,9 +631,15 @@ After saving the rule, go to **Lambda** → `dc-recorder` → **Configuration** 
 
 3. **Save changes**.
 
-### Rule 3 — Restricted zone motion (prefix pattern → SQS)
+### Rule 3 — Restricted zone motion (prefix pattern → SNS + SQS fan-out)
 
-**What it teaches:** Prefix matching on a nested detail field. The zone names `restricted-server-room` and `restricted-ceo-office` both start with `restricted-`. One pattern catches both — you do not need two rules. SNS filter policies support prefix matching on message attributes, but not on nested JSON fields inside the message body; EventBridge works directly on the JSON payload.
+**What it teaches:** Prefix matching on a nested detail field, plus **multi-target fan-out** — a single rule delivering to two targets simultaneously. The zone names `restricted-server-room` and `restricted-ceo-office` both start with `restricted-`. One pattern catches both.
+
+The security alert goes to two places at once:
+- **SNS** (`dc-sec-team`) — immediate notification to the security team within seconds of the event
+- **SQS** (`dc-security-review-queue`) — durable audit log; a human must receive and delete the message to acknowledge review
+
+The CloudWatch alarm (§11) fires when 5 or more messages accumulate unprocessed — an escalation signal, not the primary alert.
 
 1. **Create rule** on `dc-telemetry-bus`.
 2. **Name:** `dc-restricted-motion`
@@ -633,8 +655,41 @@ After saving the rule, go to **Lambda** → `dc-recorder` → **Configuration** 
 }
 ```
 
-4. **Target:** SQS queue → `dc-security-review-queue`.
-5. **Create rule**.
+4. **Add Target 1:** SNS topic → `dc-sec-team`.
+   - Expand **Additional settings** → **Configure input** → select **Input transformer**.
+   - **Input paths map:**
+     ```json
+     {
+       "zone": "$.detail.zone",
+       "sensor": "$.detail.sensorId",
+       "confidence": "$.detail.confidence"
+     }
+     ```
+   - **Input template:**
+     ```
+     "SECURITY ALERT: Motion detected in <zone> by sensor <sensor> (confidence <confidence>%). Immediate review required."
+     ```
+5. **Add Target 2:** SQS queue → `dc-security-review-queue`.
+6. **Create rule**.
+
+**Grant EventBridge permission to publish to `dc-sec-team`:**
+
+1. Open **SNS** → `dc-sec-team` → **Access policy** tab → **Edit**.
+2. Add this statement inside the `"Statement"` array:
+
+```json
+{
+  "Sid": "AllowEventBridgePublish",
+  "Effect": "Allow",
+  "Principal": {
+    "Service": "events.amazonaws.com"
+  },
+  "Action": "sns:Publish",
+  "Resource": "arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:dc-sec-team"
+}
+```
+
+3. **Save changes**.
 
 **Add the SQS queue policy** (now that the rule ARN exists):
 
@@ -790,9 +845,9 @@ Scheduler needs an IAM role to invoke your Lambda functions. Unlike EventBridge 
 
 ## 11. Create the security review alarm
 
-The pipeline currently routes restricted-zone motion events into the SQS queue — but nothing tells the security team a message is waiting. Without an alarm, the queue silently fills up. A CloudWatch Alarm on queue depth closes this gap.
+The security team already receives an immediate SNS alert when motion is detected (Rule 3, §9). The SQS queue holds every event as an audit log — but if events accumulate and nobody is processing them, that is a signal worth escalating. A CloudWatch Alarm on queue depth provides this escalation.
 
-**What it teaches:** CloudWatch Alarms as the active-notification primitive. The pattern is "queue for retention, alarm for visibility" — the queue holds events until a human processes them; the alarm tells the human there is work to do. This is how production on-call systems work.
+**What it teaches:** Layered notification — fast path (EventBridge → SNS direct) for real-time alerting, and a slow-path escalation (CloudWatch Alarm) for unacknowledged work. A queue depth of 5 or more suggests a sustained breach or a team that has stopped processing alerts — both warrant escalation. A threshold of 1 would fire on the first event, duplicating the already-immediate SNS alert and adding noise.
 
 ### Create the alarm
 
@@ -806,28 +861,28 @@ The pipeline currently routes restricted-zone motion events into the SQS queue �
 6. Under **Conditions**:
    - **Threshold type:** Static
    - **Whenever ApproximateNumberOfMessagesVisible is:** Greater/Equal `>=`
-   - **than:** `1`
+   - **than:** `5`
 7. Under **Additional configuration**:
    - **Treat missing data as:** `notBreaching` — a queue with no data means it is empty, not alarming.
 8. **Next**.
 9. Under **Notification**:
    - **Alarm state trigger:** In alarm
-   - **Select an existing SNS topic:** `datacenter-alerts`
+   - **Select an existing SNS topic:** `dc-management`
 10. Click **Add notification** again:
     - **Alarm state trigger:** OK
-    - **Select an existing SNS topic:** `datacenter-alerts`
-    > This second notification tells the team when the queue drains — confirming someone processed the events.
+    - **Select an existing SNS topic:** `dc-management`
+    > The alarm goes to the manager, not the security team. The security team already received immediate per-event alerts via SNS. This escalation tells the manager that 5 or more alerts are sitting unprocessed — a sign the security team may be overwhelmed or unresponsive.
 11. **Next**.
 12. **Alarm name:** `dc-security-review-pending`
 13. **Create alarm**.
 
-> **Expected initial state:** The alarm will show **Insufficient data** immediately after creation. SQS queue-depth metrics take 3–5 minutes to start appearing in CloudWatch for a new queue. Once metric data arrives, the alarm evaluates and transitions to **OK** or **IN_ALARM**.
+> **Expected initial state:** The alarm will show **Insufficient data** immediately after creation. SQS queue-depth metrics take 3–5 minutes to start appearing in CloudWatch for a new queue. Once metric data arrives, the alarm evaluates and transitions to **OK** or **IN_ALARM**. This delay is acceptable because the immediate security alert arrives via SNS within seconds — the alarm is an escalation signal, not the primary notification path.
 
 ### Grant CloudWatch permission to publish to SNS
 
-CloudWatch Alarms publish to SNS using the `cloudwatch.amazonaws.com` service principal. You need to add this to the `datacenter-alerts` topic policy alongside the EventBridge statement you added in section 9.
+CloudWatch Alarms publish to SNS using the `cloudwatch.amazonaws.com` service principal. The escalation alarm targets the manager topic, so you need to add this permission to `dc-management`.
 
-1. Open **SNS** → `datacenter-alerts` → **Access policy** tab → **Edit**.
+1. Open **SNS** → `dc-management` → **Access policy** tab → **Edit**.
 2. Add this statement inside the `"Statement"` array:
 
 ```json
@@ -838,13 +893,13 @@ CloudWatch Alarms publish to SNS using the `cloudwatch.amazonaws.com` service pr
     "Service": "cloudwatch.amazonaws.com"
   },
   "Action": "sns:Publish",
-  "Resource": "arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:datacenter-alerts"
+  "Resource": "arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:dc-management"
 }
 ```
 
 3. **Save changes**.
 
-> After saving, the alarm can now send notifications. If a message is sitting in `dc-security-review-queue` and is not processed, the alarm transitions to **IN_ALARM** within 1–2 evaluation periods (1–2 minutes after the metric registers). Receiving and deleting the message from the queue causes the alarm to return to **OK**.
+> After saving, the alarm can escalate to the manager. If 5 or more messages accumulate unprocessed in `dc-security-review-queue`, the alarm transitions to **IN_ALARM** within 1–2 evaluation periods and the manager receives a notification. Processing and deleting messages until fewer than 5 remain causes the alarm to return to **OK**, also notifying the manager that the backlog cleared.
 
 ---
 
@@ -871,9 +926,9 @@ A dashboard turns the abstract event pipeline into something students can watch 
 | **Lambda Invocations** | Mirrors the rule chart. Recorder should track all-readings exactly. |
 | **Lambda Errors** | Should stay flat at zero. Any spike means a function is throwing exceptions — check CloudWatch Logs. |
 | **DynamoDB Writes** | dc-readings follows every event; dc-anomalies only spikes on energy events above 50 kWh. |
-| **Security Review Queue** | Shows messages waiting. Should drop to zero after you receive and delete SQS messages. |
-| **Security Review Alarm** | The alarm widget — turns red (IN_ALARM) when queue depth ≥ 1, green (OK) when queue drains. |
-| **SNS Published** | Counts all messages to datacenter-alerts: temperature alerts + alarm transitions + daily summary emails. |
+| **Security Review Queue** | Shows messages waiting for human acknowledgment. Each receive-and-delete confirms someone reviewed that event. |
+| **Security Review Alarm** | Escalation indicator — turns red (IN_ALARM) when 5 or more messages sit unprocessed, green (OK) when the backlog clears. The immediate alert arrives via SNS; this alarm fires when the backlog is large enough to indicate a systemic problem. |
+| **SNS Published** | Counts messages to `dc-infra-team` (temperature alerts only — alarm and daily summary use their own topics). |
 
 > **CloudWatch metrics lag:** Metric data for Lambda, DynamoDB, and EventBridge typically appears within 1 minute of the event. SQS queue-depth metrics have a 3–5 minute delay. Do not be alarmed if the queue widget is blank immediately after publishing a test event — it will populate shortly.
 
@@ -928,11 +983,12 @@ aws events put-events \
 ```
 
 Expected:
-- SQS console → `dc-security-review-queue` → **Send and receive messages** → **Poll for messages** shows a new message.
-- Also: `dc-readings` gets a new record.
-- Also: Within 1–5 minutes, the `dc-security-review-pending` alarm transitions to **IN_ALARM** and an email arrives from `datacenter-alerts` with the alarm notification.
+- **Immediate (within ~30 seconds):** Email arrives in the **security team** mailbox: *"SECURITY ALERT: Motion detected in restricted-server-room by sensor M-003 (confidence 92%). Immediate review required."*
+- SQS console → `dc-security-review-queue` → **Send and receive messages** → **Poll for messages** shows a new message (the audit record).
+- Also: `dc-readings` gets a new record (catch-all rule also fires).
+- **Escalation (only if 5+ messages accumulate unprocessed):** Within 1–5 minutes of the queue depth reaching 5, `dc-security-review-pending` transitions to **IN_ALARM** and an escalation email arrives in the **manager** mailbox via `dc-management`.
 
-> **Leave the SQS message in the queue** to watch the alarm stay IN_ALARM. After you receive and delete the message, the alarm returns to OK within ~2 minutes.
+> To test the escalation alarm, publish the test event 5 or more times and leave the SQS messages unprocessed. After the queue depth reaches 5 and CloudWatch reflects it (~3–5 minutes), the alarm fires. Process and delete messages until fewer than 5 remain to watch it return to OK.
 
 **Test D — Energy spike (recorder + anomaly handler)**
 ```bash
@@ -975,7 +1031,7 @@ Open the `eventbridge-datacenter-monitoring` dashboard. Within 5 minutes of your
 2. **Event name:** `manual-test`, leave the default payload `{}`.
 3. **Test**.
 4. The function returns `{"date": "...", "events": ..., "anomalies": ...}`.
-5. The function publishes a **Datacenter Daily Summary** email to `datacenter-alerts` SNS. Check your inbox — the email contains total readings, anomaly count, active zones, and an energy anomaly list.
+5. The function publishes a **Datacenter Daily Summary** email to the `dc-management` SNS topic. Check the **manager** mailbox — the email contains total readings, anomaly count, active zones, and an energy anomaly list.
 
 ---
 
@@ -1012,9 +1068,11 @@ Delete resources in this order to avoid dependency errors.
 
 1. **CloudWatch** → **Dashboards** → select `eventbridge-datacenter-monitoring` → **Delete**.
 
-### Delete the SNS topic
+### Delete the SNS topics
 
-1. **SNS** → **Topics** → select `datacenter-alerts` → **Delete**.
+1. **SNS** → **Topics** → select `dc-infra-team` → **Delete**.
+2. Select `dc-sec-team` → **Delete**.
+3. Select `dc-management` → **Delete**.
 
 ### Delete the SQS queue
 
@@ -1040,7 +1098,10 @@ aws cloudformation deploy \
   --template-file template.yaml \
   --stack-name eventbridge-datacenter-monitoring \
   --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides AlertEmailAddress=you@example.com
+  --parameter-overrides \
+    AlertEmailAddress=infra@example.com \
+    SecurityEmailAddress=security@example.com \
+    ManagerEmailAddress=manager@example.com
 ```
 
 > **Important:** Use `CAPABILITY_NAMED_IAM`, not `CAPABILITY_IAM`. The template uses named IAM roles (the `RoleName` property is set). CloudFormation requires explicit acknowledgment that named roles are being created — `CAPABILITY_IAM` only covers anonymous roles. This is a common deployment error worth knowing.
