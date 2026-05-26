@@ -9,16 +9,17 @@ A datacenter monitoring telemetry pipeline built on Amazon EventBridge. Sensors 
 ```
 EventBridge Scheduler
   ├── every 2 min  →  simulator Lambda  →  dc-telemetry-bus (custom event bus)
-  └── daily 09:00  →  daily-summary Lambda
+  └── daily 09:00  →  daily-summary Lambda  →  SNS dc-management  →  manager inbox
 
 dc-telemetry-bus rules:
-  ├── all events           →  recorder Lambda   →  DynamoDB dc-readings
-  ├── temperature > 80C    →  SNS email alert   →  your inbox
-  ├── motion in restricted-* zones  →  SQS      →  dc-security-review-queue
+  ├── all events              →  recorder Lambda  →  DynamoDB dc-readings
+  ├── temperature > 80C       →  SNS dc-infra-team        →  infra team inbox
+  ├── motion in restricted-*  →  SNS dc-sec-team          →  security team inbox
+  │                           →  SQS dc-security-review-queue
   └── energy spike > 50 kWh  →  anomaly Lambda  →  DynamoDB dc-anomalies
 
 CloudWatch:
-  ├── Alarm on SQS queue depth ≥ 1  →  SNS email  →  your inbox (human-in-the-loop)
+  ├── Alarm: SQS queue depth ≥ 5  →  SNS dc-management  →  manager inbox (escalation)
   └── Dashboard: rule invocations, Lambda counts, DynamoDB writes, queue depth, alarm state
 ```
 
@@ -58,7 +59,10 @@ aws cloudformation deploy \
   --template-file template.yaml \
   --stack-name eventbridge-datacenter-monitoring \
   --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides AlertEmailAddress=you@example.com
+  --parameter-overrides \
+    AlertEmailAddress=infra@example.com \
+    SecurityEmailAddress=security@example.com \
+    ManagerEmailAddress=manager@example.com
 ```
 
 Confirm the SNS subscription email that arrives in your inbox. Wait 2 minutes for the first simulator run, then check DynamoDB `dc-readings` for incoming records. The CloudWatch dashboard deploys automatically — open it in CloudWatch → Dashboards.
