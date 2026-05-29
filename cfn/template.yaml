@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  EventBridge Datacenter Monitoring Telemetry — sensors publish temperature, motion,
+  EventBridge Datacenter Monitoring Telemetry  -  sensors publish temperature, motion,
   and energy events to a custom bus; four rules with progressively richer patterns
   route events to Lambda, SNS, SQS, and DynamoDB. Includes CloudWatch Alarm and
   Dashboard for end-to-end visibility.
@@ -8,17 +8,17 @@ Description: >
 Parameters:
   AlertEmailAddress:
     Type: String
-    Description: Infrastructure team email address — receives temperature alerts only.
+    Description: Infrastructure team email address  -  receives temperature alerts only.
 
   SecurityEmailAddress:
     Type: String
-    Description: Security team email address — receives restricted-zone queue-depth alarm notifications.
+    Description: Security team email address  -  receives restricted-zone queue-depth alarm notifications.
 
   ManagerEmailAddress:
     Type: String
-    Description: Manager email address — receives the daily datacenter summary digest.
+    Description: Manager email address  -  receives the daily datacenter summary digest.
 
-# ── Storage ────────────────────────────────────────────────────────────────────
+# -- Storage --------------------------------------------------------------------
 
 Resources:
 
@@ -46,7 +46,7 @@ Resources:
         - AttributeName: anomalyId
           KeyType: HASH
 
-# ── Messaging ──────────────────────────────────────────────────────────────────
+# -- Messaging ------------------------------------------------------------------
 
   AlertTopic:
     Type: AWS::SNS::Topic
@@ -153,14 +153,14 @@ Resources:
               ArnEquals:
                 aws:SourceArn: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/dc-telemetry-bus/dc-restricted-motion"
 
-# ── EventBridge ────────────────────────────────────────────────────────────────
+# -- EventBridge ----------------------------------------------------------------
 
   TelemetryBus:
     Type: AWS::Events::EventBus
     Properties:
       Name: dc-telemetry-bus
 
-# ── IAM roles ──────────────────────────────────────────────────────────────────
+# -- IAM roles ------------------------------------------------------------------
 
   SimulatorRole:
     Type: AWS::IAM::Role
@@ -277,7 +277,7 @@ Resources:
                   - !GetAtt SimulatorFunction.Arn
                   - !GetAtt DailySummaryFunction.Arn
 
-# ── Lambda functions ───────────────────────────────────────────────────────────
+# -- Lambda functions -----------------------------------------------------------
 
   SimulatorFunction:
     Type: AWS::Lambda::Function
@@ -449,7 +449,7 @@ Resources:
               sns.publish(TopicArn=SNS_TOPIC_ARN, Subject=f"Datacenter Daily Summary - {yesterday}", Message=msg)
               return {"date": yesterday, "events": len(readings), "anomalies": len(anomalies)}
 
-# ── EventBridge rules ──────────────────────────────────────────────────────────
+# -- EventBridge rules ----------------------------------------------------------
 
   AllReadingsRule:
     Type: AWS::Events::Rule
@@ -556,7 +556,7 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt EnergySpikeRule.Arn
 
-# ── EventBridge Scheduler ──────────────────────────────────────────────────────
+# -- EventBridge Scheduler ------------------------------------------------------
 
   SimulatorSchedule:
     Type: AWS::Scheduler::Schedule
@@ -590,13 +590,13 @@ Resources:
           MaximumRetryAttempts: 1
           MaximumEventAgeInSeconds: 3600
 
-# ── CloudWatch Alarm ───────────────────────────────────────────────────────────
+# -- CloudWatch Alarm -----------------------------------------------------------
 
   SecurityReviewAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: dc-security-review-pending
-      AlarmDescription: Security review queue has unprocessed messages — human action required
+      AlarmDescription: Security review queue has unprocessed messages  -  human action required
       Namespace: AWS/SQS
       MetricName: ApproximateNumberOfMessagesVisible
       Dimensions:
@@ -614,7 +614,7 @@ Resources:
       OKActions:
         - !Ref ManagerTopic
 
-# ── CloudWatch Dashboard ───────────────────────────────────────────────────────
+# -- CloudWatch Dashboard -------------------------------------------------------
 
   DatacenterMonitoringDashboard:
     Type: AWS::CloudWatch::Dashboard
@@ -627,7 +627,7 @@ Resources:
               "type": "text",
               "x": 0, "y": 0, "width": 24, "height": 2,
               "properties": {
-                "markdown": "# Datacenter Monitoring Telemetry\nEvents flow: **Simulator → dc-telemetry-bus → Rules → Lambda / SNS / SQS**. Rule invocations climb every 2 minutes as the simulator fires. Alarm goes IN_ALARM when messages sit in the security review queue."
+                "markdown": "# Datacenter Monitoring Telemetry\nEvents flow: **Simulator -> dc-telemetry-bus -> Rules -> Lambda / SNS / SQS**. Rule invocations climb every 2 minutes as the simulator fires. Alarm goes IN_ALARM when messages sit in the security review queue."
               }
             },
             {
@@ -735,7 +735,7 @@ Resources:
           ]
         }
 
-# ── Outputs ────────────────────────────────────────────────────────────────────
+# -- Outputs --------------------------------------------------------------------
 
 Outputs:
 
