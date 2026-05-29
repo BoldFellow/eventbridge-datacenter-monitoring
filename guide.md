@@ -1089,13 +1089,13 @@ Delete resources in this order to avoid dependency errors.
 
 ## Appendix A — CloudFormation shortcut
 
-If you want to deploy the entire stack in one command instead of clicking through the console, the `template.yaml` file in this repository creates all resources automatically — including the CloudWatch Alarm and Dashboard.
+If you want to deploy the entire stack in one command instead of clicking through the console, the `cfn/template.yaml` file in this repository creates all resources automatically — including the CloudWatch Alarm and Dashboard.
 
 **Requirements:** AWS CLI configured, `jq` optional but helpful.
 
 ```bash
 aws cloudformation deploy \
-  --template-file template.yaml \
+  --template-file cfn/template.yaml \
   --stack-name eventbridge-datacenter-monitoring \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides \

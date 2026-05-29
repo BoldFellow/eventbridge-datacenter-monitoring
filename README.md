@@ -41,12 +41,12 @@ CloudWatch:
 | File | Description |
 |---|---|
 | `guide.md` | Full console/clickops walkthrough — start here |
-| `template.yaml` | CloudFormation template — deploys everything in one command |
+| `cfn/template.yaml` | CloudFormation template — deploys everything in one command |
 | `dashboard.json` | CloudWatch dashboard body — paste into the dashboard source editor |
-| `lambdas/simulator.py` | Publishes 3–5 random sensor events every 2 minutes |
-| `lambdas/recorder.py` | Persists all events to DynamoDB (catch-all rule target) |
-| `lambdas/anomaly_handler.py` | Writes energy spike anomalies to DynamoDB |
-| `lambdas/daily_summary.py` | Aggregates yesterday's data, emails via SNS |
+| `app/lambdas/simulator.py` | Publishes 3–5 random sensor events every 2 minutes |
+| `app/lambdas/recorder.py` | Persists all events to DynamoDB (catch-all rule target) |
+| `app/lambdas/anomaly_handler.py` | Writes energy spike anomalies to DynamoDB |
+| `app/lambdas/daily_summary.py` | Aggregates yesterday's data, emails via SNS |
 | `test-events/reading-normal.json` | Normal temperature — only catch-all fires |
 | `test-events/reading-high-temp.json` | 87C — triggers SNS email alert |
 | `test-events/reading-restricted-motion.json` | Motion in CEO office — triggers SQS + alarm |
@@ -56,7 +56,7 @@ CloudWatch:
 
 ```bash
 aws cloudformation deploy \
-  --template-file template.yaml \
+  --template-file cfn/template.yaml \
   --stack-name eventbridge-datacenter-monitoring \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides \
